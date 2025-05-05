@@ -1,5 +1,6 @@
 import streamlit as st
 import re
+import random
 
 st.set_page_config(page_title="A1 Schreiben Trainer", page_icon="✉️")
 
@@ -129,9 +130,19 @@ def analyze_letter(letter, task_number):
         feedback.append("❌ Closing missing or incorrect.")
         score -= 5
 
-    # -------- CONCLUSION PHRASE CHECK --------
-    if not re.search(r"Ich freue mich im Voraus auf (Ihre|deine) Antwort", letter):
-        feedback.append("❌ Conclusion phrase missing or incorrect.")
+    # -------- CONCLUSION PHRASE CHECK (FLEXIBLE) --------
+    conclusion_match = re.search(
+        r"ich\s+freue\s+mich\s+im\s+voraus\s+auf\s+(ihre|deine|eure)\s+antwort", 
+        letter, re.IGNORECASE
+    )
+    if not conclusion_match:
+        student_version = re.findall(r"freue.*antwort.*", letter, re.IGNORECASE)
+        if student_version:
+            feedback.append(
+                f"❌ Conclusion phrase incorrect. Your version: '{student_version[0]}'. Expected: 'Ich freue mich im Voraus auf Ihre/deine Antwort.'"
+            )
+        else:
+            feedback.append("❌ Conclusion phrase missing.")
         score -= 5
 
     # -------- CONNECTOR CHECK --------
@@ -152,10 +163,16 @@ def analyze_letter(letter, task_number):
         feedback.append("⚠ Important A1 phrases missing (e.g., 'ich möchte' or 'könnten Sie mir').")
         score -= 3
 
-    # -------- SPELLING CHECK --------
+    # -------- SPELLING/CAPITALIZATION CHECK --------
     if re.search(r"\bKostet\b", letter):
         feedback.append("🔤 'kostet' should not be capitalized.")
         score -= 2
+
+    common_words = ["möchte", "möglich"]
+    for word in common_words:
+        if re.search(rf"\b{word.capitalize()}\b", letter):
+            feedback.append(f"🔤 Capitalization error: '{word}' should not be capitalized.")
+            score -= 1
 
     # -------- DECLENSION CHECK --------
     if re.search(r"eine[rn]? Kochkurs|eine[rn]? Deutschkurs", letter):
@@ -172,11 +189,34 @@ def analyze_letter(letter, task_number):
                     feedback.append(f"⚠ Possible word order issue after 'weil' in: '{sentence.strip()}'.")
                     score -= 2
 
-    # -------- FORMALITY CHECK (Fixed) --------
+    # -------- FORMALITY CHECK (Sie/du) --------
     if re.search(r"Sehr geehrte[r]?|Mit freundlichen Grüßen", letter):
         if re.search(r"\bdu\b", letter):
             feedback.append("⚠ You mixed formal and informal language. Use either Sie or du consistently.")
             score -= 1
+
+    # -------- IMPROVED QUESTION FORM CHECK --------
+    question_found = False
+    sentences = re.split(r'[.!?]', letter)
+
+    for sentence in sentences:
+        sentence_clean = sentence.strip()
+        if "?" in sentence or re.search(r"(ist|sind|kann|können|haben|hat|wann|wie|wer|was|wo|warum|möchte)", sentence_clean, re.IGNORECASE):
+            question_found = True
+            # Check if sentence ends with a question mark and starts correctly
+            if re.search(r'\?$', sentence):
+                if not re.match(
+                    r"^\s*(ist|sind|kann|können|haben|hat|wann|wie|wer|was|wo|warum|möchte|konnen)", 
+                    sentence_clean, re.IGNORECASE):
+                    feedback.append(
+                        f"⚠ This might not be a correct question form in: '{sentence_clean}'. "
+                        f"Check spelling and whether the verb comes first."
+                    )
+                    score -= 2
+
+    if not question_found:
+        feedback.append("⚠ No questions found. Remember to include a question.")
+        score -= 2
 
     # -------- TOPIC MATCHING CHECK --------
     topic_keywords = {
@@ -207,12 +247,10 @@ def analyze_letter(letter, task_number):
     keywords = topic_keywords.get(task_number, [])
     if keywords:
         if not any(word in letter.lower() for word in keywords):
-            feedback.append("⚠ Your letter content might not match the selected task. Use the right phrases you learned in class")
+            feedback.append("⚠ Your letter content might not match the selected task.")
             score -= 2
 
     return feedback, max(score, 0)
-
-# ---------------- SUBMIT & FEEDBACK -----------------
 
 if st.button("✅ Submit Letter", key="submit_button"):
     if len(student_letter.strip()) < 20:
@@ -233,11 +271,28 @@ if st.button("✅ Submit Letter", key="submit_button"):
             st.info("Tip: Please review your sentence structure or consult your tutor.")
 
         if "mochte" in student_letter and not "möchte" in student_letter:
-            st.warning("It looks like you wrote 'mochte' without an umlaut (ö). It should be 'möchte'.Hold o on your phone keyboard or search for it online and copy and paste")
+            st.warning("It looks like you wrote 'mochte' without an umlaut (ö). It should be 'möchte'.")
 
         word_count = len(student_letter.split())
         st.markdown(f"**Your word count:** {word_count} words")
 
         st.markdown("---")
-        st.markdown("**Learn Language Education Academy** | 🌍 Empowering your German learning journey.")
 
+        # ------------------ MOTIVATIONAL TIPS ------------------
+
+        tips = [
+            "🔎 Tip: Don’t forget to always write 'möchte' with the umlaut (ö).",
+            "💡 Tip: Yes/No questions should start with the verb. Example: 'Ist...', 'Haben...', 'Können...'.",
+            "📝 Tip: Remember to end your letter with 'Mit freundlichen Grüßen'.",
+            "📝 Tip: Use 'weil' or 'denn' to explain reasons.",
+            "🔤 Tip: 'kostet' should not be capitalized unless at the beginning of a sentence.",
+            "💬 Tip: For questions, start with 'Ist', 'Haben', 'Können' or 'Wann'.",
+            "🌟 Tip: Practice writing short emails every day to improve sentence structure.",
+            "📌 Tip: Use 'Ich möchte wissen, ob...' for polite indirect questions.",
+            "✅ Tip: Always include a reason for writing, a question, and a closing phrase."
+        ]
+
+        st.info(random.choice(tips))
+
+        st.markdown("---")
+        st.markdown("**Learn Language Education Academy** | 🌍 Empowering your German learning journey.")
