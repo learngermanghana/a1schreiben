@@ -130,12 +130,26 @@ def analyze_letter(letter, task_number):
         feedback.append("❌ Closing missing or incorrect.")
         score -= 5
 
-    # -------- CONCLUSION PHRASE CHECK (FLEXIBLE) --------
+    # -------- FORMALITY DETECTION --------
+    formal = bool(re.search(r"(Sehr geehrte[r]?|Mit freundlichen Grüßen)", letter))
+    informal = bool(re.search(r"(Hallo|Lieber|Liebe|Viele Grüße|Liebe Grüße|Dein|Deine)", letter))
+
+    # -------- CONCLUSION PHRASE CHECK WITH FORMALITY --------
     conclusion_match = re.search(
-        r"ich\s+freue\s+mich\s+im\s+voraus\s+auf\s+(ihre|deine|eure)\s+antwort", 
+        r"ich\s+freue\s+mich\s+im\s+voraus\s+auf\s+(ihre|deine|eure)\s+antwort",
         letter, re.IGNORECASE
     )
-    if not conclusion_match:
+
+    if conclusion_match:
+        used_form = conclusion_match.group(1).lower()
+
+        if formal and used_form != "ihre":
+            feedback.append("⚠ You used 'deine Antwort' but the letter is formal. Use 'Ihre Antwort'.")
+            score -= 3
+        elif informal and used_form == "ihre":
+            feedback.append("⚠ You used 'Ihre Antwort' but the letter seems informal. You can write 'deine Antwort'.")
+            score -= 1
+    else:
         student_version = re.findall(r"freue.*antwort.*", letter, re.IGNORECASE)
         if student_version:
             feedback.append(
@@ -163,7 +177,11 @@ def analyze_letter(letter, task_number):
         feedback.append("⚠ Important A1 phrases missing (e.g., 'ich möchte' or 'könnten Sie mir').")
         score -= 3
 
-    # -------- SPELLING/CAPITALIZATION CHECK --------
+    # -------- SPELLING/CAPITALIZATION CHECK (fixed "Ich" issue) --------
+    if re.search(r"\bich\b", letter) and not re.search(r"\bIch\b", letter):
+        feedback.append("🔤 'Ich' should always be capitalized.")
+        score -= 1
+
     if re.search(r"\bKostet\b", letter):
         feedback.append("🔤 'kostet' should not be capitalized.")
         score -= 2
@@ -189,13 +207,23 @@ def analyze_letter(letter, task_number):
                     feedback.append(f"⚠ Possible word order issue after 'weil' in: '{sentence.strip()}'.")
                     score -= 2
 
-    # -------- FORMALITY CHECK (Sie/du) --------
-    if re.search(r"Sehr geehrte[r]?|Mit freundlichen Grüßen", letter):
-        if re.search(r"\bdu\b", letter):
-            feedback.append("⚠ You mixed formal and informal language. Use either Sie or du consistently.")
-            score -= 1
+    # -------- PUNCTUATION CHECK --------
+    if not re.search(r'[.!?]', letter):
+        feedback.append("⚠ No sentence-ending punctuation found. Remember to end sentences with a full stop or question mark.")
+        score -= 2
 
-    # -------- IMPROVED QUESTION FORM CHECK --------
+    # -------- WRONG QUESTION MARK AFTER "Ich hoffe..." --------
+    wrong_question = re.findall(r"ich hoffe[^.?!]*\?", letter, re.IGNORECASE)
+    if wrong_question:
+        feedback.append("⚠ You wrote a sentence like 'Ich hoffe ... ?' but it should end with a full stop, not a question mark.")
+        score -= 1
+
+    # -------- FORMALITY CONSISTENCY CHECK --------
+    if formal and re.search(r"\bdu\b", letter):
+        feedback.append("⚠ You mixed formal and informal language. Use either Sie or du consistently.")
+        score -= 1
+
+    # -------- QUESTION FORM CHECK --------
     question_found = False
     sentences = re.split(r'[.!?]', letter)
 
@@ -203,14 +231,12 @@ def analyze_letter(letter, task_number):
         sentence_clean = sentence.strip()
         if "?" in sentence or re.search(r"(ist|sind|kann|können|haben|hat|wann|wie|wer|was|wo|warum|möchte)", sentence_clean, re.IGNORECASE):
             question_found = True
-            # Check if sentence ends with a question mark and starts correctly
             if re.search(r'\?$', sentence):
                 if not re.match(
-                    r"^\s*(ist|sind|kann|können|haben|hat|wann|wie|wer|was|wo|warum|möchte|konnen)", 
+                    r"^\s*(ist|sind|kann|können|haben|hat|wann|wie|wer|was|wo|warum|möchte|konnen)",
                     sentence_clean, re.IGNORECASE):
                     feedback.append(
-                        f"⚠ This might not be a correct question form in: '{sentence_clean}'. "
-                        f"Check spelling and whether the verb comes first."
+                        f"⚠ This might not be a correct question form in: '{sentence_clean}'."
                     )
                     score -= 2
 
@@ -218,7 +244,7 @@ def analyze_letter(letter, task_number):
         feedback.append("⚠ No questions found. Remember to include a question.")
         score -= 2
 
-    # -------- TOPIC MATCHING CHECK --------
+    # -------- TOPIC KEYWORDS CHECK --------
     topic_keywords = {
         1: ["arzt", "termin", "absagen", "verschieben", "schmerzen"],
         2: ["feier", "feiern", "job", "einladen"],
@@ -250,7 +276,34 @@ def analyze_letter(letter, task_number):
             feedback.append("⚠ Your letter content might not match the selected task.")
             score -= 2
 
+    # -------- TASK POINTS CHECK (IMPROVED) --------
+    missing_points = []
+    for point in letter_tasks[task_number]['points']:
+        point_keywords = [word for word in re.findall(r'\w+', point.lower())
+                          if word not in ["sie", "den", "der", "das", "die", "warum", "wann", "wie", "was", "ob", "und", "oder", "mit"]]
+
+        found = False
+        for keyword in point_keywords:
+            for student_word in re.findall(r'\w+', letter.lower()):
+                matches = sum(1 for c in keyword if c in student_word)
+                if matches >= len(keyword) * 0.7:
+                    found = True
+                    break
+            if found:
+                break
+
+        if not found:
+            missing_points.append(point)
+
+    if missing_points:
+        feedback.append("⚠ You may have missed the following required points:")
+        for mp in missing_points:
+            feedback.append(f"   - {mp}")
+        score -= 3
+
     return feedback, max(score, 0)
+
+# ---------------- SUBMIT BUTTON & FEEDBACK ------------------
 
 if st.button("✅ Submit Letter", key="submit_button"):
     if len(student_letter.strip()) < 20:
@@ -264,17 +317,20 @@ if st.button("✅ Submit Letter", key="submit_button"):
             st.success("✅ Excellent! Your letter meets all the important requirements.")
         else:
             st.error(f"Your score: {final_score}/25")
+            st.markdown("### Feedback:")
             for item in feedback:
-                st.write(item)
+                st.markdown(f"- {item}")
 
-        if final_score < 15:
-            st.info("Tip: Please review your sentence structure or consult your tutor.")
-
-        if "mochte" in student_letter and not "möchte" in student_letter:
-            st.warning("It looks like you wrote 'mochte' without an umlaut (ö). It should be 'möchte'.")
-
+        # -------- Word count & Tip --------
         word_count = len(student_letter.split())
-        st.markdown(f"**Your word count:** {word_count} words")
+        st.markdown(f"**Your word count:** {word_count} words.")
+
+        if word_count < 40:
+            st.info("✏️ Your letter is a bit short. Aim for at least 40–60 words for A1 writing tasks.")
+
+        # -------- Möchte / mochte Check --------
+        if "mochte" in student_letter and not "möchte" in student_letter:
+            st.warning("It looks like you wrote 'mochte' without an umlaut (ö). On most keyboards, press and hold 'o' to see 'ö'.")
 
         st.markdown("---")
 
@@ -295,4 +351,9 @@ if st.button("✅ Submit Letter", key="submit_button"):
         st.info(random.choice(tips))
 
         st.markdown("---")
+
+        # -------- Tutor reminder --------
+        st.warning("If you do not understand some feedback or think there is a mistake, please talk to your tutor. "
+                   "The app can sometimes make small errors.")
+
         st.markdown("**Learn Language Education Academy** | 🌍 Empowering your German learning journey.")
