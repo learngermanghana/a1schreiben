@@ -77,7 +77,6 @@ if task_number in letter_tasks:
 
 student_letter = st.text_area("✏️ Write your letter here:", height=350)
 
-
 def analyze_letter(letter, task_number):
     feedback = []
     score = 25
@@ -105,50 +104,44 @@ def analyze_letter(letter, task_number):
         lower_sentence = sentence_clean.lower()
         words = sentence_clean.split()
 
-        # ✅ Check for greeting error
         if "sehr geehrte und damen und herren" in lower_sentence:
             feedback.append("❌ Incorrect greeting. Use 'Sehr geehrte Damen und Herren'.")
             score -= 2
 
-        # ✅ Capitalization check
-        if sentence_clean[0].islower():
+        if sentence_clean and sentence_clean[0].islower():
             feedback.append(f"⚠ First word should start with a capital: '{sentence_clean}'.")
             score -= 1
 
-        # ✅ Spelling typos
         for typo, correct in common_typos.items():
             if typo in lower_sentence:
                 feedback.append(f"🔤 Spelling mistake: '{typo}' should be '{correct}'.")
                 score -= 1
 
-        # ✅ Plural check
         for singular, plural in plural_errors.items():
             if singular in lower_sentence and plural not in lower_sentence:
                 feedback.append(f"⚠ Did you mean '{plural}' instead of '{singular}'?")
                 score -= 1
 
-        # ✅ Umlaut check
         for umlaut_word in umlaut_words:
             if umlaut_word.replace("ö", "o").replace("ü", "u").lower() in lower_sentence and umlaut_word.lower() not in lower_sentence:
                 umlaut_missing = True
 
-        # ✅ Wrong modal stacking (Kann ich möchte wissen)
         if "kann ich möchte wissen" in lower_sentence:
             feedback.append("❌ 'Kann ich möchte wissen' is incorrect. Use either 'Kann ich wissen...' or 'Ich möchte wissen...', not both.")
             score -= 2
 
-        # ✅ Skip verb position check for known correct phrases
+        # ✅ Smarter modal verb position check
         if lower_sentence.startswith("können wir") and lower_sentence.endswith("treffen?"):
             pass
-        elif sentence_clean.startswith("Ich möchte mich") or sentence_clean.startswith("Ich möchte einen") or sentence_clean.startswith("Ich möchte den") or sentence_clean.startswith("Ich möchte die"):
-            # Correct A1 patterns — skip verb position check
+        elif lower_sentence.startswith("ich möchte") and ("mich" in lower_sentence or "einen" in lower_sentence or "den" in lower_sentence or "die" in lower_sentence):
             pass
         else:
             if any(mv in lower_sentence for mv in modal_verbs):
                 if len(words) >= 2 and words[1].lower() not in modal_verbs and not sentence_clean.endswith("?"):
                     feedback.append("⚠ Modal verb might not be at position 2.")
                     score -= 1
-        # ✅ Verb at end in weil/denn/ob clauses
+
+        # ✅ weil/denn/ob verb at end
         if any(w in lower_sentence for w in ["weil", "denn", "ob"]):
             if not lower_sentence.endswith((
                 "möchte.", "möchten.", "kann.", "können.", "muss.", "müssen.", "darf.", "dürfen.",
@@ -157,90 +150,73 @@ def analyze_letter(letter, task_number):
                 feedback.append("⚠ In 'weil', 'ob' or 'denn' clauses, the verb should be at the end.")
                 score -= 1
 
-        # ✅ Comma after "Ich schreibe Ihnen/dir"
         if re.search(r"ich schreibe (ihnen|dir) [a-z]", lower_sentence):
             feedback.append("⚠ You need a comma after 'Ich schreibe Ihnen' or 'Ich schreibe dir'.")
             score -= 1
 
-        # ✅ weil lowercase after comma
         if re.search(r"ich schreibe (ihnen|dir), Weil", sentence_clean):
             feedback.append("⚠ 'weil' should be lowercase after a comma.")
             score -= 1
 
-        # ✅ Comma before weil or denn unless starting sentence
         if re.search(r"\b(weil|denn)\b", lower_sentence):
             if not lower_sentence.startswith(("weil", "denn")):
                 if not re.search(r",\s*(weil|denn)", lower_sentence):
                     feedback.append("⚠ You need a comma before 'weil' or 'denn'.")
                     score -= 1
 
-        # ✅ Dir lowercase
         if " Dir" in sentence_clean:
             feedback.append("⚠ 'Dir' should be lowercase (dir). Use 'Ihnen' for formal writing.")
             score -= 1
 
-        # ✅ Comma after "Ich möchte wissen"
         if re.search(r"ich möchte wissen (wie|ob|wann)", lower_sentence):
             feedback.append("⚠ You need a comma after 'Ich möchte wissen'.")
             score -= 1
 
-        # ✅ Wrong phrase "ich möchte wissen wie viel kostet..."
         if "ich möchte wissen wie viel kostet" in lower_sentence:
             feedback.append("⚠ Please remove 'ich möchte wissen' and just write 'Wie viel kostet ... ?'.")
             score -= 1
 
-        # ✅ Separable verb check
         for sep in separable_verbs:
             if sep in lower_sentence and not re.search(rf"{sep[:-len('bringen')]}\s+.*bringen", lower_sentence):
                 feedback.append(f"⚠ Separable verb '{sep}' might not be split correctly.")
                 score -= 1
 
-        # ✅ Check for Wie viel kostet capitalization
         if "wie viel kostet" in lower_sentence:
             if not sentence_clean.startswith("Wie"):
                 feedback.append("⚠ 'Wie viel kostet ...' must start with a capital 'Wie'.")
                 score -= 1
 
-        # ✅ "Wie viel kostet..." phrasing check
         if "kostet" in lower_sentence or "zahlen" in lower_sentence:
             if not lower_sentence.startswith("wie viel kostet"):
                 feedback.append("⚠ Please use the phrase 'Wie viel kostet ... ?' for price questions.")
                 score -= 1
 
-        # ✅ Polite request phrase check
         if "könnten sie mir bitte" in lower_sentence and "mitteilen" in lower_sentence:
             polite_request_found = True
 
-        # ✅ Opening enquiry structure
         if "weil ich eine anfrage stellen möchte" in lower_sentence:
             enquiry_opening_found = True
 
-    # ✅ Suggest polite request if missing
     info_words = ["preis", "stadt", "adresse", "information", "kurs"]
     if any(word in letter.lower() for word in info_words) and not polite_request_found:
         feedback.append("💡 In your body paragraph, please use a polite request: 'Könnten Sie mir bitte ... mitteilen?'")
         score -= 1
 
-    # ✅ Suggest enquiry opening if missing
     if any(word in letter.lower() for word in info_words) and not enquiry_opening_found:
         feedback.append("💡 At the beginning of your letter, you can write: 'Ich schreibe Ihnen, weil ich eine Anfrage stellen möchte.' Then explain what you want in the next paragraph. Please ask your tutor for clarification.")
         score -= 1
 
-    # ✅ Akkusativ check for Kochkurs
     if re.search(r"ein kochkurs", letter.lower()):
         feedback.append("⚠ 'Kochkurs' is masculine. Use 'einen Kochkurs' (Akkusativ).")
         score -= 2
 
-    # ✅ Umlaut feedback
     if umlaut_missing:
         feedback.append("⚠ Some words may be missing umlauts (ö, ü). Example: möchte, können, Grüßen.")
         score -= 1
 
-    # ✅ Task points check with Version 7.8.1 improvement
+    # ✅ Task points check
     missing_points = []
-    points = letter_tasks[task_number]['points']
-
-    for point in points:
+    for point in letter_tasks[task_number]['points']:
         if "warum schreiben sie" in point.lower():
             if "weil ich eine anfrage stellen möchte" in letter.lower():
                 continue
@@ -262,6 +238,14 @@ def analyze_letter(letter, task_number):
         for mp in missing_points:
             feedback.append(f"   - {mp}")
         score -= 3
+
+        # ✅ If 2 or more points missing → warn letter may not match
+        if len(missing_points) >= 2:
+            feedback.append("⚠ Your letter may not match the task you selected. Please read the question again or ask your tutor.")
+
+    if "freue mich im voraus auf ihre antwort" not in letter.lower() and "freue mich im voraus auf deine antwort" not in letter.lower():
+        feedback.append("❌ Conclusion phrase incorrect. Expected: 'Ich freue mich im Voraus auf Ihre/deine Antwort.'")
+        score -= 2
 
     feedback.append("💡 Reminder: Check that all statements end with a full stop (.) and all questions end with a question mark (?). Start each sentence with a capital letter unless it comes after a comma.")
 
