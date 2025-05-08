@@ -101,14 +101,37 @@ def analyze_letter(letter, task_number):
         if not sent:
             continue
         words = re.findall(r"\w+", sent)
+        lower_sent = sent.lower()
 
-        # Skip checks for 'Ich möchte wissen' or 'denn ich möchte'
-        if sent.lower().startswith("ich möchte wissen") or sent.lower().startswith("denn ich möchte"):
+        # Time check: require 'um' before clock times (lowercase)
+        if re.search(r"\b\d{1,2}\s+uhr\b", lower_sent) and not re.search(r"\bum\s+\d{1,2}\s+uhr\b", lower_sent):
+            feedback.append("⚠ Use 'um <Stunde> Uhr' to express time, e.g. 'um 18 Uhr'.")
+            score -= 1
+
+        # Weekday check: must use 'am <Wochentag>' (lowercase)
+        for day in ["montag","dienstag","mittwoch","donnerstag","freitag","samstag","sonntag"]:
+            if re.search(rf"\bam\s+{day}\b", lower_sent):
+                break
+            if re.search(rf"\b{day}\b", lower_sent):
+                feedback.append(f"⚠ Use 'am {day.capitalize()}' when mentioning a weekday.")
+                score -= 1
+                break
+
+        # Month check: must use 'im <Monat>' (lowercase)
+        for month in ["januar","februar","märz","april","mai","juni","juli","august","september","oktober","november","dezember"]:
+            if re.search(rf"\bim\s+{month}\b", lower_sent):
+                break
+            if re.search(rf"\b{month}\b", lower_sent):
+                feedback.append(f"⚠ Use 'im {month.capitalize()}' when mentioning a month.")
+                score -= 1
+                break
+
+        # Skip checks for 'Ich möchte wissen' or any "denn ich möchte"
+        if lower_sent.startswith("ich möchte wissen") or "denn ich möchte" in lower_sent:
             continue
 
-        # Error checks for article with *kurs (Akkusativ masculines)
-        lower_sent = sent.lower()
-        for course in ["kochkurs", "deutschkurs", "sprachkurs"]:
+        # Error checks for *Kurs nouns
+        for course in ["kochkurs","deutschkurs","sprachkurs"]:
             if re.search(rf"\beine\s+{course}\b", lower_sent):
                 course_cap = course.capitalize()
                 feedback.append(f"⚠ '{course_cap}' is masculine. Use 'einen {course_cap}' (Akkusativ).")
@@ -133,12 +156,12 @@ def analyze_letter(letter, task_number):
                 break
 
         if modal_idx is not None:
-            if 'weil ich' in sent.lower():
+            if 'weil ich' in lower_sent:
                 # Modal verb must be last word
                 if words[-1].lower() not in modal_verbs:
                     feedback.append(f"⚠ After 'weil ich', the modal verb should be the last word: '{sent}'")
                     score -= 1
-            elif 'weil ' in sent.lower():
+            elif 'weil ' in lower_sent:
                 # Other 'weil' sentences allow 'e' or 'en'
                 last = words[-1].lower()
                 if not (last.endswith('e') or last.endswith('en')):
@@ -160,7 +183,8 @@ def analyze_letter(letter, task_number):
     missing = []
     for point in tasks[task_number]['points']:
         if point.strip().lower() == "warum schreiben sie?":
-            if re.search(r"\bich schreibe (ihnen|dir)\b", letter.lower()):
+            # Accept both correct and common typo forms of "Ich schreibe Ihnen/dir"
+            if re.search(r"\bich schr\w* (ihnen|dir)\b", letter.lower()):
                 continue
         kws = [w for w in re.findall(r"\w+", point.lower()) if w not in ['sie','den','der','das']]
         if not any(k in letter.lower() for k in kws):
