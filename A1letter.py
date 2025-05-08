@@ -1,3 +1,4 @@
+# ===== Stage 1: Imports, Configuration & UI Setup =====
 import streamlit as st
 import re
 import random
@@ -7,6 +8,7 @@ st.set_page_config(page_title="A1 Schreiben Trainer", page_icon="✉️")
 st.title("✉️ A1 Schreiben Trainer")
 st.write("**Learn Language Education Academy** – Letter Writing Practice for A1 Exam")
 
+# Student login and pledge
 student_name = st.text_input("Please enter your name:")
 pledge = st.checkbox("✅ I promise to write my own letter and not overuse translators.")
 
@@ -16,7 +18,8 @@ if not student_name or not pledge:
 
 st.success(f"Welcome, {student_name}! You may now begin.")
 
-letter_tasks = {
+# Load tasks
+tasks = {
     1: {"task": "Schreiben Sie eine E-Mail an Ihren Arzt und sagen Sie Ihren Termin ab.",
         "points": ["Warum schreiben Sie?", "Sagen Sie: den Grund für die Absage.", "Fragen Sie: nach einem neuen Termin."]},
     2: {"task": "Schreiben Sie eine Einladung an Ihren Freund zur Feier Ihres neuen Jobs.",
@@ -50,7 +53,7 @@ letter_tasks = {
     16: {"task": "Schreiben Sie eine E-Mail an Ihre Freundin. Sie kommen zur Party später.",
          "points": ["Entschuldigen Sie sich.", "Information über Ihre Besprechung.", "Fragen Sie, ob sie Hilfe braucht."]},
     17: {"task": "Schreiben Sie eine E-Mail und gratulieren Sie einem Freund zu seinem neuen Job.",
-         "points": ["Glückwunsch zum Job.", "Fragen Sie, wie der neue Job ist.", "Vorschlag: gemeinsam feiern."]},
+         "points": ["Glückwunsch zum Job.", "Fragen Sie, wie der neuen Job ist.", "Vorschlag: gemeinsam feiern."]},
     18: {"task": "Sie möchten Sachsen besuchen. Schreiben Sie an die Touristeninformation.",
          "points": ["Wann besuchen Sie Sachsen?", "Fragen Sie nach Sehenswürdigkeiten.", "Fragen Sie nach Hotels oder Gästehäusern."]},
     19: {"task": "Schreiben Sie eine E-Mail an ein Yogastudio und melden Sie sich für einen Kurs an.",
@@ -63,231 +66,121 @@ letter_tasks = {
          "points": ["Warum schreiben Sie?", "Für wie viele Personen?", "Wann möchten Sie reservieren?"]}
 }
 
+# Task selection with plus/minus buttons
 task_number = st.number_input(
-    "Choose a Schreiben task number (1 to 22):",
+    f"Choose a Schreiben task number (1 to {len(tasks)})",
     min_value=1,
-    max_value=22
+    max_value=len(tasks),
+    value=1,
+    step=1
 )
 
-if task_number in letter_tasks:
-    st.markdown(f"### 📄 Aufgabe {task_number}: {letter_tasks[task_number]['task']}")
-    st.markdown("**Please include the following points in your letter:**")
-    for point in letter_tasks[task_number]['points']:
-        st.markdown(f"- {point}")
+if task_number in tasks:
+    st.markdown(f"### 📄 Aufgabe {task_number}: {tasks[task_number]['task']}")
+    st.markdown("**Include the following points:**")
+    for p in tasks[task_number]['points']:
+        st.markdown(f"- {p}")
 
 student_letter = st.text_area("✏️ Write your letter here:", height=350)
+
+# ===== Stage 2: Analysis Logic & Submission =====
+
+WORD_MOCHTE = re.compile(r"\bmochte\b", re.IGNORECASE)
+modal_verbs = ["möchte", "möchten", "kann", "können", "kannst", "will", "wollen"]
+
 
 def analyze_letter(letter, task_number):
     feedback = []
     score = 25
 
-    letter = letter.strip()
-    letter = letter.replace("mochte", "möchte")
-    sentences = re.split(r'(?<=[.!?])\s+', letter)
+    letter = WORD_MOCHTE.sub("möchte", letter)
+    sentences = re.split(r'(?<=[.!?])\s+', letter.strip())
 
-    umlaut_missing = False
+    for sent in sentences:
+        sent = sent.strip()
+        if not sent:
+            continue
+        words = re.findall(r"\w+", sent)
 
-    common_typos = {"kostetn": "kostet", "kurz": "Kurs", "vereinbaran": "vereinbaren"}
-    plural_errors = {"tag": "tage", "jahr": "jahre"}
-    umlaut_words = ["möchte", "können", "müssen", "dürfen", "grüßen"]
-    modal_verbs = ["möchte", "möchten", "kann", "können", "muss", "müssen", "darf", "dürfen", "soll", "sollen", "will", "wollen"]
-    separable_verbs = ["mitbringen", "abholen", "vorbereiten", "ankommen"]
-
-    polite_request_found = False
-    enquiry_opening_found = False
-
-    for sentence in sentences:
-        sentence_clean = sentence.strip()
-        if not sentence_clean:
+        # Skip checks for 'Ich möchte wissen' or 'denn ich möchte'
+        if sent.lower().startswith("ich möchte wissen") or sent.lower().startswith("denn ich möchte"):
             continue
 
-        lower_sentence = sentence_clean.lower()
-        words = sentence_clean.split()
-
-        if "sehr geehrte und damen und herren" in lower_sentence:
-            feedback.append("❌ Incorrect greeting. Use 'Sehr geehrte Damen und Herren'.")
-            score -= 2
-
-        if sentence_clean and sentence_clean[0].islower():
-            feedback.append(f"⚠ First word should start with a capital: '{sentence_clean}'.")
+        # Error checks for article with *kurs (Akkusativ masculines)
+        lower_sent = sent.lower()
+        for course in ["kochkurs", "deutschkurs", "sprachkurs"]:
+            if re.search(rf"\beine\s+{course}\b", lower_sent):
+                course_cap = course.capitalize()
+                feedback.append(f"⚠ '{course_cap}' is masculine. Use 'einen {course_cap}' (Akkusativ).")
+                score -= 2
+        # Spelling corrections
+        if "kockkurs" in lower_sent:
+            feedback.append("🔤 Spelling mistake: 'Kockkurs' should be 'Kochkurs'.")
             score -= 1
-
-        for typo, correct in common_typos.items():
-            if typo in lower_sentence:
-                feedback.append(f"🔤 Spelling mistake: '{typo}' should be '{correct}'.")
+        # Mid-sentence 'Kostet' check
+        words_sent = re.findall(r"\w+", sent)
+        for w in words_sent[1:]:
+            if w == "Kostet":
+                feedback.append("⚠ 'kostet' should not be capitalized mid-sentence.")
                 score -= 1
-
-        for singular, plural in plural_errors.items():
-            if singular in lower_sentence and plural not in lower_sentence:
-                feedback.append(f"⚠ Did you mean '{plural}' instead of '{singular}'?")
-                score -= 1
-
-        for umlaut_word in umlaut_words:
-            if umlaut_word.replace("ö", "o").replace("ü", "u").lower() in lower_sentence and umlaut_word.lower() not in lower_sentence:
-                umlaut_missing = True
-
-        if "kann ich möchte wissen" in lower_sentence:
-            feedback.append("❌ 'Kann ich möchte wissen' is incorrect. Use either 'Kann ich wissen...' or 'Ich möchte wissen...', not both.")
-            score -= 2
-
-        # ✅ Smarter modal verb position check
-        if lower_sentence.startswith("können wir") and lower_sentence.endswith("treffen?"):
-            pass
-        elif lower_sentence.startswith("ich möchte") and ("mich" in lower_sentence or "einen" in lower_sentence or "den" in lower_sentence or "die" in lower_sentence):
-            pass
-        else:
-            if any(mv in lower_sentence for mv in modal_verbs):
-                if len(words) >= 2 and words[1].lower() not in modal_verbs and not sentence_clean.endswith("?"):
-                    feedback.append("⚠ Modal verb might not be at position 2.")
-                    score -= 1
-
-        # ✅ weil/denn/ob verb at end
-        if any(w in lower_sentence for w in ["weil", "denn", "ob"]):
-            if not lower_sentence.endswith((
-                "möchte.", "möchten.", "kann.", "können.", "muss.", "müssen.", "darf.", "dürfen.",
-                "soll.", "sollen.", "will.", "wollen.", "kommt.", "geht.", "zahlen.", "bezahlen."
-            )):
-                feedback.append("⚠ In 'weil', 'ob' or 'denn' clauses, the verb should be at the end.")
-                score -= 1
-
-        if re.search(r"ich schreibe (ihnen|dir) [a-z]", lower_sentence):
-            feedback.append("⚠ You need a comma after 'Ich schreibe Ihnen' or 'Ich schreibe dir'.")
-            score -= 1
-
-        if re.search(r"ich schreibe (ihnen|dir), Weil", sentence_clean):
-            feedback.append("⚠ 'weil' should be lowercase after a comma.")
-            score -= 1
-
-        if re.search(r"\b(weil|denn)\b", lower_sentence):
-            if not lower_sentence.startswith(("weil", "denn")):
-                if not re.search(r",\s*(weil|denn)", lower_sentence):
-                    feedback.append("⚠ You need a comma before 'weil' or 'denn'.")
-                    score -= 1
-
-        if " Dir" in sentence_clean:
-            feedback.append("⚠ 'Dir' should be lowercase (dir). Use 'Ihnen' for formal writing.")
-            score -= 1
-
-        if re.search(r"ich möchte wissen (wie|ob|wann)", lower_sentence):
-            feedback.append("⚠ You need a comma after 'Ich möchte wissen'.")
-            score -= 1
-
-        if "ich möchte wissen wie viel kostet" in lower_sentence:
-            feedback.append("⚠ Please remove 'ich möchte wissen' and just write 'Wie viel kostet ... ?'.")
-            score -= 1
-
-        for sep in separable_verbs:
-            if sep in lower_sentence and not re.search(rf"{sep[:-len('bringen')]}\s+.*bringen", lower_sentence):
-                feedback.append(f"⚠ Separable verb '{sep}' might not be split correctly.")
-                score -= 1
-
-        if "wie viel kostet" in lower_sentence:
-            if not sentence_clean.startswith("Wie"):
-                feedback.append("⚠ 'Wie viel kostet ...' must start with a capital 'Wie'.")
-                score -= 1
-
-        if "kostet" in lower_sentence or "zahlen" in lower_sentence:
-            if not lower_sentence.startswith("wie viel kostet"):
-                feedback.append("⚠ Please use the phrase 'Wie viel kostet ... ?' for price questions.")
-                score -= 1
-
-        if "könnten sie mir bitte" in lower_sentence and "mitteilen" in lower_sentence:
-            polite_request_found = True
-
-        if "weil ich eine anfrage stellen möchte" in lower_sentence:
-            enquiry_opening_found = True
-
-    info_words = ["preis", "stadt", "adresse", "information", "kurs"]
-    if any(word in letter.lower() for word in info_words) and not polite_request_found:
-        feedback.append("💡 In your body paragraph, please use a polite request: 'Könnten Sie mir bitte ... mitteilen?'")
-        score -= 1
-
-    if any(word in letter.lower() for word in info_words) and not enquiry_opening_found:
-        feedback.append("💡 At the beginning of your letter, you can write: 'Ich schreibe Ihnen, weil ich eine Anfrage stellen möchte.' Then explain what you want in the next paragraph. Please ask your tutor for clarification.")
-        score -= 1
-
-    if re.search(r"ein kochkurs", letter.lower()):
-        feedback.append("⚠ 'Kochkurs' is masculine. Use 'einen Kochkurs' (Akkusativ).")
-        score -= 2
-
-    if umlaut_missing:
-        feedback.append("⚠ Some words may be missing umlauts (ö, ü). Example: möchte, können, Grüßen.")
-        score -= 1
-
-    # ✅ Task points check
-    missing_points = []
-    for point in letter_tasks[task_number]['points']:
-        if "warum schreiben sie" in point.lower():
-            if "weil ich eine anfrage stellen möchte" in letter.lower():
-                continue
-        point_keywords = [word for word in re.findall(r'\w+', point.lower())
-                          if word not in ["sie", "den", "der", "das", "die", "warum", "wann", "wie", "was", "ob", "und", "oder", "mit"]]
-        found = False
-        for keyword in point_keywords:
-            for student_word in re.findall(r'\w+', letter.lower()):
-                if keyword in student_word:
-                    found = True
-                    break
-            if found:
                 break
-        if not found:
-            missing_points.append(point)
 
-    if missing_points:
-        feedback.append("⚠ You may have missed the following required points:")
-        for mp in missing_points:
-            feedback.append(f"   - {mp}")
+        # Find first modal verb index
+        modal_idx = None
+        for i, w in enumerate(words):
+            if w.lower() in modal_verbs:
+                modal_idx = i
+                break
+
+        if modal_idx is not None:
+            if 'weil ich' in sent.lower():
+                # Modal verb must be last word
+                if words[-1].lower() not in modal_verbs:
+                    feedback.append(f"⚠ After 'weil ich', the modal verb should be the last word: '{sent}'")
+                    score -= 1
+            elif 'weil ' in sent.lower():
+                # Other 'weil' sentences allow 'e' or 'en'
+                last = words[-1].lower()
+                if not (last.endswith('e') or last.endswith('en')):
+                    feedback.append(f"⚠ Sentence should end with 'e' or 'en' after 'weil': '{sent}'")
+                    score -= 1
+            else:
+                # Modal position
+                if modal_idx > 1:
+                    feedback.append(f"⚠ Modal verb appears at position {modal_idx+1} in sentence: '{sent}'")
+                    score -= 1
+                # Infinitive ending for non-weil sentences when modal at pos0/1
+                if modal_idx <= 1:
+                    last = words[-1].lower()
+                    if not last.endswith('en'):
+                        feedback.append(f"⚠ Sentence should end with an infinitive verb (ending in 'en'): '{sent}'")
+                        score -= 1
+
+    # Points coverage
+    missing = []
+    for point in tasks[task_number]['points']:
+        if point.strip().lower() == "warum schreiben sie?":
+            if re.search(r"\bich schreibe (ihnen|dir)\b", letter.lower()):
+                continue
+        kws = [w for w in re.findall(r"\w+", point.lower()) if w not in ['sie','den','der','das']]
+        if not any(k in letter.lower() for k in kws):
+            missing.append(point)
+    if missing:
+        feedback.append("⚠ Missing required points:")
+        feedback.extend([f"- {mp}" for mp in missing])
         score -= 3
-
-        # ✅ If 2 or more points missing → warn letter may not match
-        if len(missing_points) >= 2:
-            feedback.append("⚠ Your letter may not match the task you selected. Please read the question again or ask your tutor.")
-
-    if "freue mich im voraus auf ihre antwort" not in letter.lower() and "freue mich im voraus auf deine antwort" not in letter.lower():
-        feedback.append("❌ Conclusion phrase incorrect. Expected: 'Ich freue mich im Voraus auf Ihre/deine Antwort.'")
-        score -= 2
-
-    feedback.append("💡 Reminder: Check that all statements end with a full stop (.) and all questions end with a question mark (?). Start each sentence with a capital letter unless it comes after a comma.")
 
     return feedback, max(score, 0)
 
-if st.button("✅ Submit Letter", key="submit_button"):
+# Submission handling
+if st.button("✅ Submit Letter"):
     if len(student_letter.strip()) < 20:
-        st.warning("Please write a longer letter before submitting.")
+        st.warning("Write a longer letter before submitting.")
     else:
-        feedback, final_score = analyze_letter(student_letter, task_number)
-
-        st.subheader("📝 Analysis & Feedback")
-
-        if final_score >= 22:
-            st.success(f"✅ Excellent! Your score: {final_score}/25")
-        elif final_score >= 16:
-            st.warning(f"Your score: {final_score}/25. Good attempt, but you need to improve.")
-        else:
-            st.error(f"Your score: {final_score}/25. You need to improve this letter.")
-
-        st.markdown("### Feedback:")
-        for item in feedback:
-            st.markdown(f"- {item}")
-
-        word_count = len(student_letter.split())
-        st.markdown(f"**Your word count:** {word_count} words.")
-
-        if word_count < 40:
-            st.info("✏️ Your letter is a bit short. Aim for at least 40–60 words for A1 writing tasks.")
-
-        st.markdown("---")
-
-        tips = [
-            "💡 No space before ? or . in German sentences.",
-            "💡 Yes/No questions should start with a verb or modal verb.",
-            "💡 'weil' sends the verb to the end.",
-            "💡 If your sentence starts with time, the verb should be at position 2.",
-            "💡 Start sentences with time or place for variety!",
-            "💡 Use 'möchte' (with umlaut) not 'mochte' (past tense)."
-        ]
-        st.info(random.choice(tips))
-
-        st.warning("If you do not understand some feedback or think there is a mistake, please talk to your tutor. The app can sometimes make small errors.")
-
-        st.markdown("**Learn Language Education Academy** | 🌍 Empowering your German learning journey.")
+        feedback, score = analyze_letter(student_letter, task_number)
+        st.subheader("📝 Feedback & Score")
+        st.write(f"Score: {score}/25")
+        for f in feedback:
+            st.markdown(f"- {f}")
+        wc = len(re.findall(r"\w+", student_letter))
+        st.markdown(f"**Word count:** {wc}")
